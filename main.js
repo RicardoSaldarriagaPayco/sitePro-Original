@@ -40,12 +40,16 @@ ElementRegister.registerPaymentGateway({
 	keyFieldId: 'customerId',
 	keyField2Id: 'pkey',
 	keyField3Id: 'secretKey',
-	keyField4Id: 'payType',
+	keyField4Id: 'epaycoLanguage',
 	keyField5Id: 'demo',
 	keyFieldDef: {type: 'HorizontalLayout', columnWeights: [6, 6, 6, 6, 6, 6], noPadding: true, children: [
 		{type: 'TextField', placeholder: 'Customer ID', id: 'key'},
 		{type: 'TextField', placeholder: 'P key', id: 'key2'},
 		{type: 'TextField', placeholder: 'Public Key', id: 'key3', css: {marginTop: 5}},
+		{type: 'DropdownBox', placeholder: 'Checkout', id: 'key4', css: {marginTop: 5}, options: [
+			{id: 'EN', name: 'English'},
+    		{id: 'ES', name: 'Spanish'},
+		]},
 		{type: 'CheckBox', label: __('Test mode'), id: 'key5', css: {padding: 7, marginTop: 5, display: 'inline-block'}, init: function() {
 			this.getElem().attr('title', __('For testing purpose without real payments')).tooltip({placement: 'right'});
 		}}
@@ -75,22 +79,28 @@ PluginWrapper.registerPlugin('epayco', {
 				data.content.productinfo = value;
 			}
 		},
-		{id: 'customerId', type: 'EpaycoCustomerId', helpText: 'EpaycoCustomerId helpt text .',
+		{id: 'customerId', type: 'EpaycoCustomerId', helpText: 'Customer ID that identifies you to ePayco. You can find it in your customer panel in the configuration option.',
 			get: function(data) { return data.content.customerId; },
 			set: function(value, data) {
 				data.content.customerId = value;
 			}
 		},
-		{id: 'pkey', type: 'EpaycoPkey', helpText: 'ExpaycoPkey helpt text .',
+		{id: 'pkey', type: 'EpaycoPkey', helpText: 'Key to sign the information sent and received from ePayco. You can find it in your customer panel in the configuration option.',
 			get: function(data) { return data.content.pkey; },
 			set: function(value, data) {
 				data.content.pkey = value;
 			}
 		},
-		{id: 'secretKey', type: 'EpaycoSecretKey', helpText: 'EpaycoSecretKey help text.',
+		{id: 'secretKey', type: 'EpaycoSecretKey', helpText: 'Key to authenticate and consume ePayco services, Provided in your customer panel in the configuration option.',
 			get: function(data) { return data.content.secretKey; },
 			set: function(value, data) {
 				data.content.secretKey = value;
+			}
+		},
+		{id: 'language', type: 'EpaycoLanguage', helpText: 'Checkout Language.',
+			get: function(data) { return data.content.epaycoLanguage; },
+			set: function(value, data) {
+				data.content.epaycoLanguage = value;
 			}
 		},
 		{id: 'amount', type: 'EpaycoAmount', helpText: __("Amount to be transferred") + ', USD',
@@ -154,6 +164,13 @@ PluginWrapper.registerPlugin('epayco', {
     					{type: 'VerticalLayout', children: [
     						{type: 'Label', text: 'PUBLIC_KEY', helpText: 'Key to authenticate and consume ePayco services, Provided in your customer panel in the configuration option.'},
     						{type: 'TextField', id: 'secretKey'}
+    					]},
+    					{type: 'VerticalLayout', children: [
+    						{type: 'Label', text: 'Checkout'},
+    						{type: 'DropdownBox', id: 'epaycoLanguage', options: [
+    							{id: 'EN', name: 'English'},
+    		                    {id: 'ES', name: 'Spanish'}
+    						]}
     					]}
     				]},
     				{type: 'VerticalLayout', css: {marginTop: 15}, children: [
@@ -169,11 +186,14 @@ PluginWrapper.registerPlugin('epayco', {
 	},
 	openAction: function (fields, data, elem) {
 	    var itm;
+	    var languageItm;
 		fields.productinfo.setText(data.content.productinfo);
 		fields.amount.setText(data.content.amount);
 		fields.customerId.setText(data.content.customerId);
 		fields.pkey.setText(data.content.pkey);
 		fields.secretKey.setText(data.content.secretKey);
+		languageItm = fields.payType.getItemById(data.content.epaycoLanguage);
+		fields.epaycoLanguage.selectItem(languageItm);
 		itm = fields.currency.getItemById('#' + data.content.currency);
 		fields.currency.selectItem(itm);
 		fields.demo.setValue(data.content.demo);
@@ -181,11 +201,14 @@ PluginWrapper.registerPlugin('epayco', {
 	},
 	applyAction: function (fields, data, elem) {
 	    var itm;
+	    var languageItm;
 		data.content.productinfo = fields.productinfo.getText();
 		data.content.amount = fields.amount.getText();
 		data.content.customerId = fields.customerId.getText();
 		data.content.pkey = fields.pkey.getText();
 		data.content.secretKey = fields.secretKey.getText();
+		languageItm = fields.payType.getSelectedItem();
+		data.content.epaycoLanguage = languageItm.getOriginal().value;
 		itm = fields.currency.getSelectedItem();
 		data.content.currency = itm.getOriginal().value;
 		data.content.demo = fields.demo.getValue();
@@ -198,6 +221,7 @@ PluginWrapper.registerPlugin('epayco', {
 		if (!data.content.customerId) data.content.customerId = '';
 		if (!data.content.pkey) data.content.pkey = '';
 		if (!data.content.secretKey) data.content.secretKey = '';
+		if (!data.content.epaycoLanguage) data.content.languageItm = 'EN';
 		if (!data.content.currency) data.content.currency = 'USD';
 		if (data.content.demo === undefined) data.content.demo = false;
 		if (['epayco.png'].indexOf(data.content.logo) > -1) {
