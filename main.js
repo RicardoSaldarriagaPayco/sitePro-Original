@@ -1,4 +1,3 @@
-
 var Globals = {
 	getDefaultStyles: function(isStore) {
 		var styles = {
@@ -224,9 +223,6 @@ PluginWrapper.registerPlugin('epayco', {
 		if (!data.content.epaycoLanguage) data.content.languageItm = 'EN';
 		if (!data.content.currency) data.content.currency = 'USD';
 		if (data.content.demo === undefined) data.content.demo = false;
-		if (['epayco.png'].indexOf(data.content.logo) > -1) {
-			data.content.logo = 'epayco_dark.svg';
-		}
 		PluginWrapper.paymentGatewayLoadAction(data, Globals.getDefaultStyles());
 	}
 });

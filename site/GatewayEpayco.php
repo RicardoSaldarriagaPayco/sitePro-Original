@@ -6,9 +6,10 @@ class GatewayEpayco extends PaymentGateway {
 	private $_pkey;
 	private $_secretKey;
 	private $_demo;
+
+	protected $returnAfterCallback = true;
 	
-	public function init()
-	{
+	public function init() {
 	   if (isset($this->config->customerId) && $this->config->customerId) {
 			$this->_customerId = $this->config->customerId;
 		}
@@ -18,13 +19,12 @@ class GatewayEpayco extends PaymentGateway {
 		if (isset($this->config->secretKey) && $this->config->secretKey) {
 			$this->_secretKey = $this->config->secretKey;
 		}
-		if (isset($this->config->demo) && $this->config->demo) {
-			$this->_demo = $this->config->demo;
-		}
+		$this->_demo = (isset($this->config->demo) && $this->config->demo);
 	}
 	
 	public function getTransactionId() {
-		return $this->getFormParam('udf1');
+		$req = $this->parseCallbackBody();
+		return trim($req->x_extra1);
 	}
 	
 	private function getClientName() {
@@ -60,57 +60,41 @@ class GatewayEpayco extends PaymentGateway {
 	}
 	
 	public function authSignature($x_ref_payco, $x_transaction_id, $x_amount, $x_currency_code){
-        $signature = hash('sha256',
-            trim($this->config->customerId).'^'
-            .trim($this->config->pkey).'^'
-            .$x_ref_payco.'^'
-            .$x_transaction_id.'^'
-            .$x_amount.'^'
-            .$x_currency_code
-        );
-
-        return $signature;
-    }
-    
-    
-    public function getPaymentStatus($status = null)
-    {
-      if($status == "Aceptada"){
-         return true;
-      }
-      else if($status == "Fallida"){
-         return StoreModuleOrder::STATE_FAILED;
-      }
-      else if($status == "Rechazada"){
-         return StoreModuleOrder::STATE_REFUNDED;
-      }
-    }
+		$signature = hash('sha256',
+			trim($this->_customerId).'^'
+			.trim($this->_pkey).'^'
+			.$x_ref_payco.'^'
+			.$x_transaction_id.'^'
+			.$x_amount.'^'
+			.$x_currency_code
+		);
+		return $signature;
+	}
 	
 	public function createFormFields($formVars) {
-		if (isset($this->_customerId) && isset($this->_secretKey) ) {
+		if (isset($this->_customerId) && isset($this->_secretKey)) {
 			$cart = StoreData::getCartData();
 			$tax = StoreData::getTaxRules();
 			$descripcionParts = array();
 			foreach ($cart->items as $product) {
-                    $descripcionParts[] = $product->name;
-            }
-            $descripcion = implode(' - ', $descripcionParts);
-            $cartData = $cart->billingInfo;
-            $totals = (object) array(); StoreCartApi::calcTaxesAndShipping($totals, $cart);
-            $totalAmount = $totals->totalPrice;
-            $taxPrice = $totals->taxPrice ? $totals->taxPrice : 0;
-            $subTotalPrice = $totals->subTotalPrice ? $totals->subTotalPrice : $totalAmount;
-            $order = StoreModuleOrder::findByTransactionId($formVars['txnid']);
-            $invoiceNumber = $order->getInvoiceDocumentNumber();
+					$descripcionParts[] = $product->name;
+			}
+			$descripcion = implode(' - ', $descripcionParts);
+			$cartData = $cart->billingInfo;
+			$totals = (object) array(); StoreCartApi::calcTaxesAndShipping($totals, $cart);
+			$totalAmount = $totals->totalPrice;
+			$taxPrice = $totals->taxPrice ? $totals->taxPrice : 0;
+			$subTotalPrice = $totals->subTotalPrice ? $totals->subTotalPrice : $totalAmount;
+			$order = StoreModuleOrder::findByTransactionId($formVars['txnid']);
+			$invoiceNumber = $order->getInvoiceDocumentNumber();
 			$orderState = $order->getState();
 			$amountOrder =$order->getPrice() ? $order->getPrice() : $totalAmount;
-            $params = [];
-            $params['customer_name'] = $cartData->firstName." ".$cartData->lastName;
-            $params['customer_email'] = $cartData->email;
-            $params['address1'] = $cartData->address1;
-            $params['phone'] = $cartData->phone;
-            $params['countryCode'] = $cartData->countryCode;
-            $url = getBaseUrl();
+			$params = [];
+			$params['customer_name'] = $cartData->firstName." ".$cartData->lastName;
+			$params['customer_email'] = $cartData->email;
+			$params['address1'] = $cartData->address1;
+			$params['phone'] = $cartData->phone;
+			$params['countryCode'] = $cartData->countryCode;
 			return array(
 				'<input type="hidden" name="customer_name" value="'.$params['customer_name'].'" />',
 				'<input type="hidden" name="customer_email" value="'.$params['customer_email'].'" />',
@@ -122,118 +106,121 @@ class GatewayEpayco extends PaymentGateway {
 				'<input type="hidden" name="totalAmount" value="'.$amountOrder.'" />',
 				'<input type="hidden" name="subTotalPrice" value="'.$subTotalPrice.'" />',
 				'<input type="hidden" name="taxPrice" value="'.$taxPrice.'" />',
-				'<input type="hidden" name="test" value="'.$this->_demo.'" />',
+				'<input type="hidden" name="test" value="'.$formVars['test'].'" />',
 				'<input type="hidden" name="extra1" value="'.$formVars['txnid'].'" />'
 			);
 		}
 		return null;
 	}
+
+	private $parsedCallbackRequest = null;
+	private $callbackRequestProcessed = false;
+
+	private function parseCallbackBody() {
+		if (!$this->callbackRequestProcessed) {
+			$this->callbackRequestProcessed = true;
+			if (!empty($_POST)) {
+				$this->parsedCallbackRequest = (object)$_POST;
+			} else if (isset($_REQUEST["ref_payco"]) && $_REQUEST["ref_payco"]) {
+				$ref_payco = $_REQUEST['ref_payco'];
+				$url = 'https://secure.epayco.co/validation/v1/reference/'.$ref_payco;
+				$response =file_get_contents($url);
+				$jsonData = json_decode($response);
+				if ($jsonData->success) {
+					$this->parsedCallbackRequest = $jsonData->data;
+				}
+			}
+		}
+		return $this->parsedCallbackRequest;
+	}
 	
 	/**
-     * @param StoreModuleOrder $order
-     * @return boolean
-     */
-    public function callback(StoreModuleOrder $order = null) {
-		$reqRaw = $_POST;
-		if(!empty($reqRaw)){
-		    $x_signature = $reqRaw['x_signature'];
-            $x_cod_transaction_state = (int)$reqRaw['x_cod_transaction_state'];
-            $x_ref_payco = $reqRaw['x_ref_payco'];
-            $x_transaction_id = $reqRaw['x_transaction_id'];
-            $x_amount = $reqRaw['x_amount'];
-            $x_currency_code = $reqRaw['x_currency_code'];
-            $x_test_request = trim($reqRaw['x_test_request']);
-            $x_extra1 = trim($reqRaw['x_extra1']);
-            $trxState = trim($reqRaw["x_respuesta"]);
-            $x_approval_code = trim($reqRaw['x_approval_code']);
-            if(!$order){
-		        $order = StoreModuleOrder::findByTransactionId($x_extra1); 
-		    }
-		}else{
-		    if($_REQUEST["ref_payco"]){
-		        $ref_payco = $_REQUEST['ref_payco'];
-		        $url = 'https://secure.epayco.co/validation/v1/reference/'.$ref_payco;
-		        $response =file_get_contents($url);
-		        $jsonData = json_decode($response);
-	            if($jsonData->success){
-            	    $validationData = $jsonData->data;
-            	    $x_signature = trim($validationData->x_signature);
-                    $x_cod_transaction_state = (int)trim($validationData->x_cod_transaction_state);
-                    $x_ref_payco = trim($validationData->x_ref_payco);
-                    $x_transaction_id = trim($validationData->x_transaction_id);
-                    $x_amount = trim($validationData->x_amount);
-                    $x_currency_code = trim($validationData->x_currency_code);
-                    $x_test_request = trim($validationData->x_test_request);
-                    $x_extra1 = trim($validationData->x_extra1);
-                    $trxState = trim($validationData->x_respuesta);
-            	    if(!$order){
-		                $order = StoreModuleOrder::findByTransactionId($x_extra1); 
-		            }
-            	}else{
-            	     return false;
-            	}
-                
-		    }
-		}
+	 * @param StoreModuleOrder $order
+	 * @return boolean
+	 */
+	public function callback(StoreModuleOrder $order = null) {
+		$req = $this->parseCallbackBody();
+		$x_signature = trim($req->x_signature);
+		$x_cod_transaction_state = (int)trim($req->x_cod_transaction_state);
+		$x_ref_payco = trim($req->x_ref_payco);
+		$x_transaction_id = trim($req->x_transaction_id);
+		$x_amount = trim($req->x_amount);
+		$x_currency_code = trim($req->x_currency_code);
+		$x_test_request = trim($req->x_test_request);
+		$x_extra1 = trim($req->x_extra1);
+		$x_approval_code = trim($req->x_approval_code);
+		$trxState = trim($req->x_respuesta);
+
 		if ($order) {
-		    $invoiceNumber = $order->getInvoiceDocumentNumber();
-		    $orderState = $order->getState();
-		    $isTestTransaction = $x_test_request == 'TRUE' ? "yes" : "no";
-            $isTestPluginMode = $this->config->demo;
-            if(floatval($order->getPrice()) == floatval($x_amount)){
-                if("1" == $isTestPluginMode){
-                    $validation = true;
-                }else{
-                    if($x_approval_code != "000000" && $x_cod_transaction_state == 1){
-                        $validation = true;
-                    }else{
-                        if($x_cod_transaction_state != 1){
-                            $validation = true;
-                        }else{
-                            $validation = false;
-                        }
-                    } 
-                }
-            }else{
-                $validation = false;
-            }
-		    $authSignature = $this->authSignature($x_ref_payco, $x_transaction_id, $x_amount, $x_currency_code);
-		    
-		     if($authSignature == $x_signature && $validation){
-		         if ($trxState == 'Rechazada') {
-				    $order->setState(StoreModuleOrder::STATE_REFUNDED);
-				    $order->save();
-			    } else if ($trxState == 'Fallida') {
-				    $order->setState(StoreModuleOrder::STATE_FAILED);
-				    $order->save();
-			    } else if ($trxState == 'Aceptada') {
-				    return true;
-			    }
-		     }else{
-		      return false;   
-		     }
-		    
+			$invoiceNumber = $order->getInvoiceDocumentNumber();
+			$orderState = $order->getState();
+			$isTestTransaction = $x_test_request == 'TRUE' ? "yes" : "no";
+			$isTestPluginMode = $this->_demo;
+			if (floatval($order->getPrice()) == floatval($x_amount)){
+				if ("1" == $isTestPluginMode){
+					$validation = true;
+				} else {
+					if ($x_approval_code != "000000" && $x_cod_transaction_state == 1) {
+						$validation = true;
+					} else {
+						if ($x_cod_transaction_state != 1) {
+							$validation = true;
+						} else {
+							$validation = false;
+						}
+					} 
+				}
+			} else {
+				$validation = false;
+			}
+			$authSignature = $this->authSignature($x_ref_payco, $x_transaction_id, $x_amount, $x_currency_code);
+			
+			if ($authSignature == $x_signature && $validation) {
+				 if ($trxState == 'Rechazada') {
+					$order->setState(StoreModuleOrder::STATE_CANCELLED);
+					$order->save();
+				} else if ($trxState == 'Fallida') {
+					$order->setState(StoreModuleOrder::STATE_FAILED);
+					$order->save();
+				} else if ($trxState == 'Pendiente') {
+					$order->setState(StoreModuleOrder::STATE_PENDING);
+					$order->save();
+				} else if ($trxState == 'Aceptada') {
+					return true;
+				}
+			}
 		}
 		return false;
-    }
-    
-    
-    private function generateCheckoutUrl(array $params) {
-		$fields = array();
-		$url = "https://plugins.epayco.io/develop/epayco/public/site/checkout/payment";
-        return $url; 
-        
-    }
-    
-    public function createRedirectUrl($formVars) {
+	}
+	
+	public function completeCheckout() {
+		$req = $this->parseCallbackBody();
+		if (!$req) return;
+		$trxState = trim($req->x_respuesta);
+		if ($trxState != 'Aceptada') {
+			$url = getBaseUrl().'store-cancel/Epayco';
+			header('Location: '.$url, true, 302);
+			exit();
+		}
+	}
+	
+	public function cancel() {
+		$req = $this->parseCallbackBody();
+		if (!$req) return;
+		$trxState = trim($req->x_respuesta);
+		if ($trxState == 'Pendiente') {
+			$url = getBaseUrl().'store-return/Epayco';
+			header('Location: '.$url, true, 302);
+			exit();
+		}
+	}
+	
+	public function createRedirectUrl($formVars) {
 		try {
-		return $this->generateCheckoutUrl($formVars);
+			return "https://cms.epayco.co/site/checkout/payment";
 		} catch (ErrorException $ex) {
 			$this->setLastError($ex->getMessage());
 		}
 		return false;
 	}
-
-
-	
 }

@@ -1,15 +1,13 @@
-<form method="post" action="https://plugins.epayco.io/develop/epayco/public/site/checkout/payment" id="epayco_form" data-gateway-id="Epayco"{{^content.store}} target="_blank"{{/content.store}} style="width: 100%; height: 100%;">
+<form method="post" action="https://cms.epayco.co/site/checkout/payment" id="epayco_form" data-gateway-id="Epayco"{{^content.store}} target="_blank"{{/content.store}} style="width: 100%; height: 100%;">
 	<input type="hidden" name="key" value="{{content.secretKey}}" />
 	<input type="hidden" name="epaycoLanguage" value="{{content.epaycoLanguage}}" />
 	<input type="hidden" name="productinfo" value="{{content.productinfo}}" />
 	<input type="hidden" name="amount" value="{{content.amount}}" />
 	<input type="hidden" name="currency" value="{{content.currency}}" />
-	<input type="hidden" name="demo" value="{{content.demo}}" />
-	<input type="hidden"  id="actionUrl" name="actionUrl" value="" />
+	<input type="hidden" name="test" value="{{content.demo}}" />
 	{{#content.store}}
 	<input type="hidden" name="txnid" value="{transactionId}" />
 	<input type="hidden" name="surl" value="{callbackUrl}" />
-	<input type="hidden" name="furl" value="{cancelUrl}" />
 	{{/content.store}}
 	{{^content.store}}
 	{{{requireService}}}
